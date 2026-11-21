@@ -1,0 +1,30 @@
+[
+  {
+    "part": "CT202634",
+    "color": "Black",
+    "models": ["DocuCentre-VI C2271", "C3371", "C5571", "C6671", "C7771"],
+    "yield": 34000,
+    "notes": "From retailer listings — check against your printer"
+  },
+  {
+    "part": "CT202635",
+    "color": "Cyan",
+    "models": ["DocuCentre-VI C2271", "C3371", "C5571", "C6671", "C7771"],
+    "yield": 18500,
+    "notes": "From retailer listings — check against your printer"
+  },
+  {
+    "part": "CT202636",
+    "color": "Magenta",
+    "models": ["DocuCentre-VI C2271", "C3371", "C5571", "C6671", "C7771"],
+    "yield": 18500,
+    "notes": "From retailer listings — check against your printer"
+  },
+  {
+    "part": "CT202637",
+    "color": "Yellow",
+    "models": ["DocuCentre-VI C2271", "C3371", "C5571", "C6671", "C7771"],
+    "yield": 18500,
+    "notes": "From retailer listings — check against your printer"
+  }
+]

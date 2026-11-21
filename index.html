@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Toner Scan">
+<meta name="theme-color" content="#0b6e4f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Fuji Toner Scanner</title>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<style>
+  :root {
+    --bg:#f6f5f2; --card:#fff; --ink:#1d1d1f; --muted:#6e6e73; --line:#e3e1dc;
+    --accent:#0b6e4f; --accent-ink:#fff; --warn:#a35200; --err:#b3261e;
+    --K:#1d1d1f; --C:#00a3e0; --M:#d6007e; --Y:#ffd400;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#121212; --card:#1e1e1e; --ink:#f2f2f2; --muted:#a0a0a5; --line:#333; --accent:#3fbf8f; --accent-ink:#06261b; --K:#000; }
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: max(12px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  }
+  main { max-width:560px; margin:0 auto; }
+  h1 { font-size:20px; margin:4px 0 12px; }
+  .scan-row { display:flex; gap:8px; }
+  button, .btn {
+    font:inherit; border:0; border-radius:12px; padding:14px 16px; cursor:pointer;
+    background:var(--card); color:var(--ink); border:1px solid var(--line);
+  }
+  .primary { background:var(--accent); color:var(--accent-ink); border-color:transparent; font-weight:600; }
+  .scan-row .primary { flex:1; font-size:18px; }
+  input[type=search], input[type=text], input[type=number], select, textarea {
+    font:inherit; width:100%; padding:12px 14px; border-radius:12px;
+    border:1px solid var(--line); background:var(--card); color:var(--ink);
+  }
+  .search { margin:12px 0; }
+  .status { min-height:22px; font-size:14px; color:var(--muted); margin:6px 2px; }
+  .status.err { color:var(--err); } .status.ok { color:var(--accent); } .status.warn { color:var(--warn); }
+  .card {
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:14px; margin:10px 0; display:flex; gap:12px; align-items:flex-start;
+  }
+  .card.hit { outline:3px solid var(--accent); }
+  .swatch { width:36px; height:36px; border-radius:50%; flex:none; border:1px solid var(--line); }
+  .part { font-weight:700; font-size:18px; letter-spacing:.3px; }
+  .meta { color:var(--muted); font-size:14px; }
+  .models { font-size:14px; margin-top:4px; }
+  .card .grow { flex:1; min-width:0; }
+  .card button { padding:8px 12px; font-size:14px; }
+  .empty { text-align:center; color:var(--muted); padding:24px 8px; }
+  #video-wrap { display:none; position:relative; margin:10px 0; border-radius:14px; overflow:hidden; background:#000; }
+  #video-wrap video { width:100%; display:block; }
+  #video-wrap .guide { position:absolute; left:8%; right:8%; top:38%; height:24%; border:3px solid rgba(255,255,255,.8); border-radius:8px; }
+  #video-wrap button { position:absolute; right:8px; top:8px; }
+  dialog { border:0; border-radius:16px; padding:0; width:min(520px, 94vw); background:var(--card); color:var(--ink); }
+  dialog::backdrop { background:rgba(0,0,0,.45); }
+  dialog form { padding:16px; display:grid; gap:10px; }
+  dialog label { font-size:13px; color:var(--muted); display:grid; gap:4px; }
+  .row { display:flex; gap:8px; justify-content:flex-end; }
+  .danger { color:var(--err); margin-right:auto; }
+  .foot { font-size:12px; color:var(--muted); margin-top:18px; }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fuji Toner Scanner</h1>
+
+  <div class="scan-row">
+    <label class="btn primary" for="photo" style="text-align:center">📷 Scan barcode</label>
+    <button id="liveBtn" class="hidden" title="Live camera">🎥 Live</button>
+    <button id="addBtn" title="Add toner">＋</button>
+  </div>
+  <input id="photo" type="file" accept="image/*" capture="environment" class="hidden">
+
+  <div id="video-wrap"><video id="video" playsinline muted></video><div class="guide"></div><button id="stopLive">Close</button></div>
+
+  <div class="status" id="status">Take a photo of the 型號 barcode, or search below.</div>
+
+  <input id="q" class="search" type="search" placeholder="Search part no., printer model or colour…" autocomplete="off" autocapitalize="characters">
+
+  <div id="list"></div>
+
+  <p class="foot" id="foot"></p>
+  <div class="scan-row hidden" id="backupRow">
+    <button id="exportBtn">⬇︎ Export list</button>
+    <label class="btn" for="importFile">⬆︎ Import list</label>
+  </div>
+  <input id="importFile" type="file" accept="application/json,.json" class="hidden">
+</main>
+
+<dialog id="dlg">
+  <form id="form">
+    <strong id="dlgTitle">Add toner</strong>
+    <label>Part number<input id="fPart" type="text" required autocapitalize="characters" placeholder="CT202634"></label>
+    <label>Colour
+      <select id="fColor">
+        <option>Black</option><option>Cyan</option><option>Magenta</option><option>Yellow</option>
+        <option>Drum</option><option>Waste toner</option><option>Other</option>
+      </select>
+    </label>
+    <label>Compatible models (comma separated)<textarea id="fModels" rows="2" placeholder="DocuCentre-VI C2271, C3371"></textarea></label>
+    <label>Yield (pages)<input id="fYield" type="number" inputmode="numeric" min="0"></label>
+    <label>Notes<input id="fNotes" type="text" placeholder="Shelf B2, 3 in stock…"></label>
+    <div class="row">
+      <button type="button" id="fDelete" class="danger hidden">Delete</button>
+      <button type="button" id="fCancel">Cancel</button>
+      <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const COLORS = { Black:'var(--K)', Cyan:'var(--C)', Magenta:'var(--M)', Yellow:'var(--Y)', Drum:'#8a8a8a', 'Waste toner':'#6b5b45', Other:'#bbb' };
+  let items = [];        // [{part,color,models[],yield,notes}]
+  let store = null;      // {save(item), remove(part)}
+  let highlight = null;
+  let canWrite = true;
+
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const norm = s => String(s || '').toUpperCase().replace(/\*/g,'').replace(/\s+/g,'').trim();
+  const setStatus = (msg, cls='') => { const el=$('status'); el.textContent = msg; el.className = 'status ' + cls; };
+
+  // ---------- Rendering ----------
+  function render() {
+    const q = $('q').value.trim().toUpperCase();
+    const terms = q.split(/\s+/).filter(Boolean);
+    let list = items.slice().sort((a,b) => a.part.localeCompare(b.part));
+    if (terms.length) {
+      list = list.filter(it => {
+        const hay = [it.part, it.color, ...(it.models||[]), it.notes].join(' ').toUpperCase();
+        const hayNoSpace = hay.replace(/[\s-]/g,'');
+        return terms.every(t => hay.includes(t) || hayNoSpace.includes(t.replace(/-/g,'')));
+      });
+    }
+    if (highlight) list.sort((a,b) => (b.part===highlight) - (a.part===highlight));
+    const el = $('list');
+    if (!items.length) { el.innerHTML = '<div class="empty">No toners saved yet. Scan one or tap ＋.</div>'; return; }
+    if (!list.length) { el.innerHTML = '<div class="empty">No match for “' + esc(q) + '”.</div>'; return; }
+    el.innerHTML = list.map(it => `
+      <div class="card ${it.part===highlight?'hit':''}">
+        <div class="swatch" style="background:${COLORS[it.color]||COLORS.Other}"></div>
+        <div class="grow">
+          <div class="part">${esc(it.part)}</div>
+          <div class="meta">${esc(it.color)}${it.yield ? ' · ' + Number(it.yield).toLocaleString() + ' pages' : ''}</div>
+          ${it.models && it.models.length ? `<div class="models">${it.models.map(esc).join(', ')}</div>` : ''}
+          ${it.notes ? `<div class="meta">${esc(it.notes)}</div>` : ''}
+        </div>
+        ${canWrite ? `<button data-edit="${esc(it.part)}">Edit</button>` : ''}
+      </div>`).join('');
+  }
+  $('list').addEventListener('click', e => {
+    const p = e.target.closest('[data-edit]'); if (p) openForm(items.find(i => i.part === p.dataset.edit));
+  });
+  $('q').addEventListener('input', () => { highlight = null; render(); });
+
+  // ---------- Lookup after scan ----------
+  function handleCode(raw) {
+    const code = norm(raw);
+    if (!code) return;
+    const hit = items.find(i => i.part === code);
+    $('q').value = '';
+    if (hit) {
+      highlight = hit.part;
+      setStatus(`Found ${hit.part} — ${hit.color}`, 'ok');
+      render();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      highlight = null; render();
+      setStatus(`Scanned ${code} — not in your list yet.`, 'warn');
+      if (canWrite) openForm({ part: code, color: 'Black', models: [], yield: '', notes: '' }, true);
+    }
+  }
+
+  // ---------- Photo decode (works inside the sandbox) ----------
+  const hints = new Map();
+  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+    ZXing.BarcodeFormat.CODE_39, ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.EAN_13,
+    ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.QR_CODE, ZXing.BarcodeFormat.DATA_MATRIX, ZXing.BarcodeFormat.ITF
+  ]);
+  const reader = new ZXing.MultiFormatReader(); reader.setHints(hints);
+
+  function tryDecodeCanvas(canvas) {
+    try {
+      const src = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+      return reader.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(src)), hints);
+    } catch { return null; }
+  }
+  function drawScaled(img, maxW, rot) {
+    const s = Math.min(1, maxW / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.round(img.naturalWidth * s), h = Math.round(img.naturalHeight * s);
+    const c = document.createElement('canvas');
+    const r = rot % 180 !== 0;
+    c.width = r ? h : w; c.height = r ? w : h;
+    const ctx = c.getContext('2d', { willReadFrequently:true });
+    ctx.translate(c.width/2, c.height/2); ctx.rotate(rot*Math.PI/180); ctx.drawImage(img, -w/2, -h/2, w, h);
+    return c;
+  }
+  $('photo').addEventListener('change', async e => {
+    const f = e.target.files && e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    setStatus('Reading barcode…');
+    const url = URL.createObjectURL(f);
+    const img = new Image();
+    img.onload = () => {
+      let res = null;
+      outer: for (const size of [1600, 1000, 2400]) for (const rot of [0, 90, 180, 270]) {
+        res = tryDecodeCanvas(drawScaled(img, size, rot)); if (res) break outer;
+      }
+      URL.revokeObjectURL(url);
+      if (res) handleCode(res.getText());
+      else setStatus('Couldn’t read a barcode. Fill the frame with it, hold steady, avoid glare — or type the part number below.', 'err');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); setStatus('Couldn’t open that photo.', 'err'); };
+    img.src = url;
+  });
+
+  // ---------- Live camera (only where the page is allowed the camera) ----------
+  let live = null;
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.isSecureContext) $('liveBtn').classList.remove('hidden');
+  $('liveBtn').addEventListener('click', async () => {
+    try {
+      live = new ZXing.BrowserMultiFormatReader(hints, 300);
+      $('video-wrap').style.display = 'block';
+      setStatus('Point at the barcode…');
+      await live.decodeFromConstraints({ video: { facingMode: 'environment' } }, $('video'), (res) => {
+        if (res) { stopLive(); handleCode(res.getText()); }
+      });
+    } catch (err) {
+      stopLive();
+      $('liveBtn').classList.add('hidden');
+      setStatus('Live camera isn’t allowed here — use 📷 Scan barcode (takes a photo) instead.', 'warn');
+    }
+  });
+  function stopLive() { if (live) { try { live.reset(); } catch {} live = null; } $('video-wrap').style.display = 'none'; }
+  $('stopLive').addEventListener('click', () => { stopLive(); setStatus(''); });
+
+  // ---------- Add / edit form ----------
+  let editingPart = null;
+  function openForm(it, isNew) {
+    it = it || { part:'', color:'Black', models:[], yield:'', notes:'' };
+    editingPart = isNew || !it.part ? null : it.part;
+    $('dlgTitle').textContent = editingPart ? 'Edit ' + it.part : 'Add toner';
+    $('fPart').value = it.part; $('fColor').value = it.color || 'Black';
+    $('fModels').value = (it.models || []).join(', '); $('fYield').value = it.yield || '';
+    $('fNotes').value = it.notes || '';
+    $('fDelete').classList.toggle('hidden', !editingPart);
+    $('dlg').showModal();
+  }
+  $('addBtn').addEventListener('click', () => openForm(null, true));
+  $('fCancel').addEventListener('click', () => $('dlg').close());
+  let confirmDel = false;
+  $('fDelete').addEventListener('click', async () => {
+    if (!confirmDel) { confirmDel = true; $('fDelete').textContent = 'Tap again to delete'; setTimeout(() => { confirmDel=false; $('fDelete').textContent='Delete'; }, 3000); return; }
+    confirmDel = false; $('fDelete').textContent = 'Delete';
+    try { await store.remove(editingPart); $('dlg').close(); setStatus('Deleted ' + editingPart, 'ok'); }
+    catch (e) { setStatus('Delete failed: ' + (e.message || e.code), 'err'); }
+  });
+  $('form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const it = {
+      part: norm($('fPart').value),
+      color: $('fColor').value,
+      models: $('fModels').value.split(',').map(s => s.trim()).filter(Boolean),
+      yield: Number($('fYield').value) || 0,
+      notes: $('fNotes').value.trim(),
+    };
+    if (!/^[A-Z0-9._~:@+-]{2,60}$/.test(it.part)) { setStatus('Part number can only use letters, digits and - . _', 'err'); return; }
+    try {
+      if (editingPart && editingPart !== it.part) await store.remove(editingPart);
+      await store.save(it);
+      $('dlg').close(); highlight = it.part; setStatus('Saved ' + it.part, 'ok');
+    } catch (err) { setStatus('Save failed: ' + (err.message || err.code), 'err'); }
+  });
+
+  // ---------- Storage: Claude artifact DB if available, else this browser ----------
+  function clean(x) {
+    const part = norm(x && x.part);
+    if (!part) return null;
+    return { part, color: String(x.color || 'Other'), models: Array.isArray(x.models) ? x.models.map(String) : [],
+             yield: Number(x.yield) || 0, notes: String(x.notes || '') };
+  }
+  async function useLocal() {
+    const KEY = 'fuji-toners-v1';
+    const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(items)); } catch {} };
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(KEY)); } catch {}
+    if (Array.isArray(saved)) items = saved.map(clean).filter(Boolean);
+    else {
+      // First visit on this device: start from the catalog file shipped with the site.
+      try { items = (await fetch('toners.json', { cache: 'no-cache' }).then(r => r.json())).map(clean).filter(Boolean); persist(); }
+      catch { items = []; }
+    }
+    store = {
+      async save(it) { items = items.filter(i => i.part !== it.part).concat(it); persist(); render(); },
+      async remove(p) { items = items.filter(i => i.part !== p); persist(); render(); },
+    };
+    $('foot').textContent = 'Saved on this device only. Use Export to back up or move your list to another device.';
+    $('backupRow').classList.remove('hidden');
+    $('exportBtn').onclick = () => {
+      const blob = new Blob([JSON.stringify(items.slice().sort((a,b)=>a.part.localeCompare(b.part)), null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = 'toners.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    };
+    $('importFile').onchange = async e => {
+      const f = e.target.files && e.target.files[0]; e.target.value = '';
+      if (!f) return;
+      try {
+        const arr = JSON.parse(await f.text());
+        if (!Array.isArray(arr)) throw new Error('not a list');
+        const incoming = arr.map(clean).filter(Boolean);
+        const byPart = new Map(items.map(i => [i.part, i]));
+        incoming.forEach(i => byPart.set(i.part, i));
+        items = [...byPart.values()]; persist(); render();
+        setStatus(`Imported ${incoming.length} toner${incoming.length === 1 ? "" : "s"}.`, 'ok');
+      } catch (err) { setStatus('That file isn’t a toner list (' + err.message + ').', 'err'); }
+    };
+    render();
+  }
+
+  async function init() {
+    render();
+    let db = null, user = null;
+    try {
+      if (window.claude && claude.use) {
+        db = await claude.use('db');
+        user = await claude.use('user');
+      }
+    } catch {}
+    if (!db) { useLocal(); return; }
+    try { const w = user && user.can ? await user.can('data.write') : null; if (w === false) canWrite = false; } catch {}
+    if (!canWrite) $('addBtn').classList.add('hidden');
+    const col = db.collection('toners');
+    store = {
+      save: it => col.doc(it.part).set(it),
+      remove: p => col.doc(p).delete(),
+    };
+    $('foot').textContent = 'Synced to your Claude account — same list on iPhone and Mac.';
+    const timer = setTimeout(() => setStatus('Can’t reach saved data yet — check your connection.', 'warn'), 10000);
+    col.onSnapshot(snap => {
+      if (!snap.metadata.fromCache) clearTimeout(timer);
+      items = snap.docs.map(d => { const x = d.data() || {}; return { part: d.id, color: x.color || 'Other', models: Array.isArray(x.models) ? x.models : [], yield: x.yield || 0, notes: x.notes || '' }; });
+      render();
+    }, err => { clearTimeout(timer); setStatus('Data error: ' + err.code, 'err'); });
+  }
+  init();
+})();
+</script>
+</body>
+</html>
