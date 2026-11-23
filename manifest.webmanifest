@@ -1,6 +1,6 @@
 {
-  "name": "Fuji Toner Scanner",
-  "short_name": "Toner Scan",
+  "name": "Toner Stocktake",
+  "short_name": "Toner Stocktake",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
