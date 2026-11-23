@@ -53,8 +53,4 @@ The camera only works over HTTPS. GitHub Pages provides HTTPS automatically.
 
 - **Settings → Toner list backup** exports and imports the list. To give new devices an updated starting list, replace `toners.json` in the repository with an exported file.
 
-```json
-{ "part": "CT202634", "color": "Black", "models": ["DocuCentre-VI C2271", "C3371"], "yield": 34000, "notes": "Shelf B2" }
-```
-
 Barcode reading uses [ZXing](https://github.com/zxing-js/library) and Excel files are made with [SheetJS](https://sheetjs.com). Both load from jsDelivr.
