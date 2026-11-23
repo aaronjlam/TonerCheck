@@ -51,7 +51,6 @@ The camera only works over HTTPS. GitHub Pages provides HTTPS automatically.
 
 ## Your toner list
 
-- [`toners.json`](toners.json) is the starting list a phone loads the first time it opens the app. After that, the phone keeps its own copy.
 - **Settings → Toner list backup** exports and imports the list. To give new devices an updated starting list, replace `toners.json` in the repository with an exported file.
 
 ```json
