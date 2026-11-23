@@ -1,52 +1,63 @@
-# Fuji Toner Scanner
+# Toner Stocktake
 
-A small web app for iPhone (or any phone) that scans the barcode on a Fujifilm / Fuji Xerox toner box and shows the part number, colour, page yield and compatible printer models.
+A phone web app for stocktaking Fujifilm / Fuji Xerox toner. Scan the barcode on each box and that part's count goes up by 1. When you're done, download the counts as an Excel file, or have every scan go live to a Google Sheet.
 
-Fuji toner boxes carry a **Code 39** barcode next to 型號 (e.g. `*CT202634*`) that encodes the part number directly, so the app just looks that part number up in your list.
+Fuji toner boxes carry a **Code 39** barcode next to 型號 (e.g. `*CT202634*`) that contains the part number itself.
 
-## Features
+## How a stocktake works
 
-- **🎥 Live**: point the camera at the barcode and it scans automatically.
-- **📷 Scan barcode**: take a photo and the app reads the barcode from it (use this if live scanning has trouble).
-- Search by part number, printer model or colour.
-- Add, edit and delete toners. Scanning an unknown part opens the add form already filled in.
-- Your list is saved on the phone (browser storage). **Export list** and **Import list** back it up or move it to another device.
-- Can be added to the Home Screen like an app.
+1. **Settings → Start new stocktake** sets every count to 0. You can download the previous stocktake first.
+2. Tap **🎥 Scan (live camera)** and point the phone at each box in turn. Each box adds **+1**, with a beep and a green flash.
+   - Holding the same barcode in view doesn't keep counting. Move the camera off it for about 1.5 seconds before scanning the next box of the same part.
+   - **📷 Scan from photo** is a backup for barcodes the live camera won't read.
+3. The **Last scanned** card shows the part and its count, with **Undo**, **−1**, **+1** and **Edit** buttons.
+4. **📋 Stock list** shows every counted part and the total.
+5. **⬇︎ Download Excel** saves `Stocktake <date>.xlsx` with two sheets:
+   - **Summary:** part, colour, compatible models, quantity counted, plus a total.
+   - **Scan log:** every +1, −1 and undo, with the time.
 
-There's no server and no account. Everything runs in the browser. Barcode decoding uses [ZXing](https://github.com/zxing-js/library), loaded from jsDelivr.
+Parts not in your toner list are still counted. Tap **Edit** to add their colour and models.
+
+## Where the results go
+
+Choose under **Settings → Save results to**:
+
+| | Excel file (download) | Google Sheet (live) |
+|---|---|---|
+| Setup | None | About 5 minutes, once |
+| Updates | When you tap Download Excel | With every scan |
+| Works offline | Yes | Scans wait on the phone and send when you're back online |
+| Excel download | Yes | Yes, still available |
+
+### Setting up the Google Sheet
+
+1. Create a new Google Sheet.
+2. Go to **Extensions → Apps Script**, delete the code that's there, and paste in the contents of [`google-apps-script.gs`](google-apps-script.gs). Save.
+3. Click **Deploy → New deployment**. Under **Select type**, choose **Web app**. Set **Execute as** to **Me** and **Who has access** to **Anyone**, then click **Deploy** and approve the permissions.
+4. Copy the **Web app URL** (it ends in `/exec`), paste it into the app under **Settings → Google Sheet**, and tap **Send test row**. A TEST row should appear in the sheet's **Scan log** tab.
+
+The sheet then has a **Summary** tab with live quantities per part and a **Scan log** tab with every change. Starting a new stocktake clears the Summary tab. The Scan log tab keeps all history.
+
+> Anyone who has the web app URL can add rows to your sheet, so keep the URL private. It can't read your sheet.
 
 ## Publish on GitHub Pages
 
-1. Create a new repository on GitHub, e.g. `fuji-toner-scanner`.
-2. Upload every file in this folder to it, including `.nojekyll`.
-3. In the repository, open **Settings → Pages**. Under **Build and deployment**, set Source to **Deploy from a branch**, Branch to **main** and folder to **/ (root)**, then click **Save**.
-4. After a minute or so the app is live at `https://<your-username>.github.io/fuji-toner-scanner/`.
-5. On your iPhone, open that address in Safari, tap **Share → Add to Home Screen**, and allow camera access when asked.
+1. Create a new repository on GitHub, e.g. `toner-stocktake`.
+2. Upload every file in this folder, including `.nojekyll`. On a Mac, press Cmd+Shift+. in Finder to show hidden files.
+3. Go to **Settings → Pages**. Set **Source** to **Deploy from a branch**, the branch to **main** and the folder to **/ (root)**, then click **Save**.
+4. Open `https://<your-username>.github.io/toner-stocktake/` in Safari on your iPhone. Tap **Share → Add to Home Screen** and allow camera access when asked.
 
 The camera only works over HTTPS. GitHub Pages provides HTTPS automatically.
 
 ## Your toner list
 
-- `toners.json` is the starting list a phone loads **the first time** it opens the app. After that, the phone keeps its own copy.
-- To share an updated starting list with new devices, use **Export list**, replace `toners.json` in the repository with the exported file, and commit.
-- To copy your current list to another phone, Export on one and Import on the other.
-
-Each entry looks like this:
+- [`toners.json`](toners.json) is the starting list a phone loads the first time it opens the app. After that, the phone keeps its own copy.
+- **Settings → Toner list backup** exports and imports the list. To give new devices an updated starting list, replace `toners.json` in the repository with an exported file.
 
 ```json
-{
-  "part": "CT202634",
-  "color": "Black",
-  "models": ["DocuCentre-VI C2271", "C3371"],
-  "yield": 34000,
-  "notes": "Shelf B2"
-}
+{ "part": "CT202634", "color": "Black", "models": ["DocuCentre-VI C2271", "C3371"], "yield": 34000, "notes": "Shelf B2" }
 ```
-
-`color` is one of: Black, Cyan, Magenta, Yellow, Drum, Waste toner, Other.
 
 The four starter entries (CT202634–CT202637) come from retailer listings. Check them against your printer's supplies list.
 
-## Privacy note
-
-A public GitHub repository makes `toners.json` visible to anyone. Only the starting list is published. Anything you add on your phone stays on your phone.
+Barcode reading uses [ZXing](https://github.com/zxing-js/library) and Excel files are made with [SheetJS](https://sheetjs.com). Both load from jsDelivr.
