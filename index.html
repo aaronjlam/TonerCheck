@@ -5,357 +5,587 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Toner Scan">
+<meta name="apple-mobile-web-app-title" content="Toner Stocktake">
 <meta name="theme-color" content="#0b6e4f">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<title>Fuji Toner Scanner</title>
+<title>Toner Stocktake</title>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root {
-    --bg:#f6f5f2; --card:#fff; --ink:#1d1d1f; --muted:#6e6e73; --line:#e3e1dc;
-    --accent:#0b6e4f; --accent-ink:#fff; --warn:#a35200; --err:#b3261e;
+    --bg:#f4f3ef; --card:#fff; --ink:#1d1d1f; --muted:#6e6e73; --line:#e2e0da;
+    --accent:#0b6e4f; --accent-ink:#fff; --accent-soft:#e3f1ec;
+    --warn:#a35200; --err:#b3261e;
     --K:#1d1d1f; --C:#00a3e0; --M:#d6007e; --Y:#ffd400;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#121212; --card:#1e1e1e; --ink:#f2f2f2; --muted:#a0a0a5; --line:#333; --accent:#3fbf8f; --accent-ink:#06261b; --K:#000; }
+    :root { --bg:#111; --card:#1c1c1e; --ink:#f2f2f2; --muted:#a0a0a5; --line:#333;
+            --accent:#3fbf8f; --accent-ink:#06261b; --accent-soft:#163329; --K:#000; }
   }
-  * { box-sizing:border-box; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   body {
     margin:0; background:var(--bg); color:var(--ink);
-    font:16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    padding: max(12px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    font:16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   }
-  main { max-width:560px; margin:0 auto; }
-  h1 { font-size:20px; margin:4px 0 12px; }
-  .scan-row { display:flex; gap:8px; }
-  button, .btn {
-    font:inherit; border:0; border-radius:12px; padding:14px 16px; cursor:pointer;
+  main { max-width:520px; margin:0 auto; display:flex; flex-direction:column; gap:12px; }
+  header { display:flex; flex-direction:column; gap:2px; padding:2px 2px 4px; }
+  header h1 { font-size:22px; margin:0; }
+  header .sub { font-size:14px; color:var(--muted); }
+
+  /* Full-width stacked buttons */
+  .btn {
+    display:flex; align-items:center; gap:12px; width:100%;
+    font:inherit; font-size:17px; text-align:left; cursor:pointer;
+    padding:16px 18px; border-radius:14px;
     background:var(--card); color:var(--ink); border:1px solid var(--line);
   }
-  .primary { background:var(--accent); color:var(--accent-ink); border-color:transparent; font-weight:600; }
-  .scan-row .primary { flex:1; font-size:18px; }
-  input[type=search], input[type=text], input[type=number], select, textarea {
-    font:inherit; width:100%; padding:12px 14px; border-radius:12px;
+  .btn .ico { width:26px; text-align:center; font-size:20px; flex:none; }
+  .btn .hint { margin-left:auto; font-size:14px; color:var(--muted); }
+  .btn.primary { background:var(--accent); color:var(--accent-ink); border-color:transparent; font-weight:600; font-size:19px; padding:20px 18px; }
+  .btn.primary .hint { color:inherit; opacity:.8; }
+  .btn:active { transform:scale(.985); }
+  .group { display:flex; flex-direction:column; border-radius:14px; overflow:hidden; border:1px solid var(--line); background:var(--card); }
+  .group .btn { border:0; border-radius:0; border-top:1px solid var(--line); }
+  .group .btn:first-child { border-top:0; }
+
+  input[type=search], input[type=text], input[type=number], input[type=url], select, textarea {
+    font:inherit; width:100%; padding:14px 16px; border-radius:14px;
     border:1px solid var(--line); background:var(--card); color:var(--ink);
   }
-  .search { margin:12px 0; }
-  .status { min-height:22px; font-size:14px; color:var(--muted); margin:6px 2px; }
-  .status.err { color:var(--err); } .status.ok { color:var(--accent); } .status.warn { color:var(--warn); }
-  .card {
-    background:var(--card); border:1px solid var(--line); border-radius:14px;
-    padding:14px; margin:10px 0; display:flex; gap:12px; align-items:flex-start;
+  .search-wrap { position:relative; }
+  .results { display:flex; flex-direction:column; gap:6px; margin-top:6px; }
+  .results:empty { display:none; }
+  .row {
+    display:flex; align-items:center; gap:12px; padding:12px 14px; cursor:pointer;
+    background:var(--card); border:1px solid var(--line); border-radius:12px;
   }
-  .card.hit { outline:3px solid var(--accent); }
-  .swatch { width:36px; height:36px; border-radius:50%; flex:none; border:1px solid var(--line); }
-  .part { font-weight:700; font-size:18px; letter-spacing:.3px; }
-  .meta { color:var(--muted); font-size:14px; }
-  .models { font-size:14px; margin-top:4px; }
-  .card .grow { flex:1; min-width:0; }
-  .card button { padding:8px 12px; font-size:14px; }
-  .empty { text-align:center; color:var(--muted); padding:24px 8px; }
-  #video-wrap { display:none; position:relative; margin:10px 0; border-radius:14px; overflow:hidden; background:#000; }
-  #video-wrap video { width:100%; display:block; }
-  #video-wrap .guide { position:absolute; left:8%; right:8%; top:38%; height:24%; border:3px solid rgba(255,255,255,.8); border-radius:8px; }
-  #video-wrap button { position:absolute; right:8px; top:8px; }
-  dialog { border:0; border-radius:16px; padding:0; width:min(520px, 94vw); background:var(--card); color:var(--ink); }
+  .row .grow { flex:1; min-width:0; }
+  .row .p { font-weight:650; }
+  .row .m { font-size:13px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row .q { font-size:20px; font-weight:700; min-width:2ch; text-align:right; font-variant-numeric:tabular-nums; }
+  .row .q.zero { color:var(--muted); font-weight:500; }
+  .swatch { width:28px; height:28px; border-radius:50%; flex:none; border:1.5px solid rgba(128,128,128,.55); }
+
+  /* Last-scanned card */
+  .last { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; display:flex; flex-direction:column; gap:12px; }
+  .last.flash { animation: flash .6s ease-out; }
+  @keyframes flash { from { background:var(--accent-soft); border-color:var(--accent); } to { background:var(--card); } }
+  .last .label { font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  .last .top { display:flex; align-items:center; gap:14px; }
+  .last .swatch { width:44px; height:44px; }
+  .last .part { font-size:24px; font-weight:750; letter-spacing:.3px; }
+  .last .meta { font-size:14px; color:var(--muted); }
+  .last .qty { margin-left:auto; text-align:center; }
+  .last .qty b { display:block; font-size:40px; line-height:1; font-variant-numeric:tabular-nums; }
+  .last .qty span { font-size:12px; color:var(--muted); }
+  .last .actions { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; }
+  .last .actions button { font:inherit; font-size:15px; padding:12px 4px; border-radius:12px; border:1px solid var(--line); background:var(--bg); color:var(--ink); cursor:pointer; }
+  .last .empty { color:var(--muted); text-align:center; padding:8px 0; }
+  .last .unknown { font-size:14px; color:var(--warn); }
+
+  .status { min-height:20px; font-size:14px; color:var(--muted); padding:0 4px; }
+  .status.ok { color:var(--accent); } .status.warn { color:var(--warn); } .status.err { color:var(--err); }
+
+  #video-wrap { display:none; position:relative; border-radius:16px; overflow:hidden; background:#000; }
+  #video-wrap video { width:100%; display:block; max-height:42vh; object-fit:cover; }
+  #video-wrap .guide { position:absolute; left:8%; right:8%; top:34%; height:32%; border:3px solid rgba(255,255,255,.85); border-radius:10px; transition:border-color .2s; }
+  #video-wrap.hit .guide { border-color:#3fdc9c; }
+  #video-wrap .stop { position:absolute; left:0; right:0; bottom:0; width:100%; border:0; padding:14px; font:inherit; font-weight:600; background:rgba(0,0,0,.6); color:#fff; }
+
+  /* Sheets (dialogs) */
+  dialog { border:0; padding:0; background:var(--bg); color:var(--ink); width:100%; max-width:520px; max-height:92vh; border-radius:18px; }
   dialog::backdrop { background:rgba(0,0,0,.45); }
-  dialog form { padding:16px; display:grid; gap:10px; }
-  dialog label { font-size:13px; color:var(--muted); display:grid; gap:4px; }
-  .row { display:flex; gap:8px; justify-content:flex-end; }
-  .danger { color:var(--err); margin-right:auto; }
-  .foot { font-size:12px; color:var(--muted); margin-top:18px; }
+  .sheet { display:flex; flex-direction:column; gap:12px; padding:18px 16px 20px; }
+  .sheet h2 { margin:0; font-size:19px; display:flex; align-items:center; }
+  .sheet h2 .x { margin-left:auto; font:inherit; font-size:15px; border:0; background:none; color:var(--accent); cursor:pointer; padding:6px; }
+  .sheet label.f { display:flex; flex-direction:column; gap:6px; font-size:14px; color:var(--muted); }
+  .sheet .note { font-size:13px; color:var(--muted); }
+  .choice { display:flex; flex-direction:column; gap:8px; }
+  .choice label { display:flex; gap:12px; align-items:flex-start; padding:14px; border-radius:14px; background:var(--card); border:1px solid var(--line); cursor:pointer; }
+  .choice label:has(input:checked) { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
+  .choice input { margin-top:3px; accent-color:var(--accent); width:18px; height:18px; }
+  .choice b { display:block; }
+  .choice small { color:var(--muted); }
+  .danger { color:var(--err) !important; }
+  details { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; font-size:14px; }
+  details summary { cursor:pointer; font-weight:600; }
+  details ol { padding-left:20px; margin:8px 0 0; }
+  .totals { display:flex; gap:8px; }
+  .totals div { flex:1; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
+  .totals b { display:block; font-size:22px; font-variant-numeric:tabular-nums; }
+  .totals span { font-size:12px; color:var(--muted); }
+  .toggle { display:flex; align-items:center; gap:8px; font-size:14px; color:var(--muted); }
   .hidden { display:none !important; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Fuji Toner Scanner</h1>
+  <header>
+    <h1>Toner Stocktake</h1>
+    <div class="sub" id="stSub">—</div>
+  </header>
 
-  <div class="scan-row">
-    <label class="btn primary" for="photo" style="text-align:center">📷 Scan barcode</label>
-    <button id="liveBtn" class="hidden" title="Live camera">🎥 Live</button>
-    <button id="addBtn" title="Add toner">＋</button>
-  </div>
+  <div id="video-wrap"><video id="video" playsinline muted></video><div class="guide"></div><button class="stop" id="stopLive">Stop scanning</button></div>
+
+  <button class="btn primary" id="liveBtn"><span class="ico">🎥</span>Scan (live camera)<span class="hint">+1 each box</span></button>
+  <label class="btn" for="photo"><span class="ico">📷</span>Scan from photo</label>
   <input id="photo" type="file" accept="image/*" capture="environment" class="hidden">
 
-  <div id="video-wrap"><video id="video" playsinline muted></video><div class="guide"></div><button id="stopLive">Close</button></div>
-
-  <div class="status" id="status">Take a photo of the 型號 barcode, or search below.</div>
-
-  <input id="q" class="search" type="search" placeholder="Search part no., printer model or colour…" autocomplete="off" autocapitalize="characters">
-
-  <div id="list"></div>
-
-  <p class="foot" id="foot"></p>
-  <div class="scan-row hidden" id="backupRow">
-    <button id="exportBtn">⬇︎ Export list</button>
-    <label class="btn" for="importFile">⬆︎ Import list</label>
+  <div class="search-wrap">
+    <input id="q" type="search" placeholder="🔍  Search part no. / model / colour" autocomplete="off" autocapitalize="characters">
+    <div class="results" id="results"></div>
   </div>
-  <input id="importFile" type="file" accept="application/json,.json" class="hidden">
+
+  <div class="status" id="status"></div>
+
+  <section class="last" id="last"></section>
+
+  <div class="group">
+    <button class="btn" id="listBtn"><span class="ico">📋</span>Stock list<span class="hint" id="listHint"></span></button>
+    <button class="btn" id="exportBtn"><span class="ico">⬇︎</span><span id="exportLabel">Download Excel</span><span class="hint" id="syncHint"></span></button>
+    <button class="btn" id="addBtn"><span class="ico">＋</span>Add toner manually</button>
+    <button class="btn" id="settingsBtn"><span class="ico">⚙︎</span>Settings &amp; new stocktake</button>
+  </div>
 </main>
 
-<dialog id="dlg">
-  <form id="form">
-    <strong id="dlgTitle">Add toner</strong>
-    <label>Part number<input id="fPart" type="text" required autocapitalize="characters" placeholder="CT202634"></label>
-    <label>Colour
-      <select id="fColor">
-        <option>Black</option><option>Cyan</option><option>Magenta</option><option>Yellow</option>
-        <option>Drum</option><option>Waste toner</option><option>Other</option>
-      </select>
-    </label>
-    <label>Compatible models (comma separated)<textarea id="fModels" rows="2" placeholder="DocuCentre-VI C2271, C3371"></textarea></label>
-    <label>Yield (pages)<input id="fYield" type="number" inputmode="numeric" min="0"></label>
-    <label>Notes<input id="fNotes" type="text" placeholder="Shelf B2, 3 in stock…"></label>
-    <div class="row">
-      <button type="button" id="fDelete" class="danger hidden">Delete</button>
-      <button type="button" id="fCancel">Cancel</button>
-      <button type="submit" class="primary">Save</button>
+<!-- Stock list -->
+<dialog id="dlgList"><div class="sheet">
+  <h2>Stock list <button class="x" data-close>Done</button></h2>
+  <div class="totals"><div><b id="tParts">0</b><span>parts counted</span></div><div><b id="tUnits">0</b><span>boxes in total</span></div></div>
+  <label class="toggle"><input type="checkbox" id="showZero"> Show parts with 0 counted</label>
+  <div class="results" id="stockRows"></div>
+</div></dialog>
+
+<!-- Add / edit toner -->
+<dialog id="dlgEdit"><form class="sheet" id="form">
+  <h2><span id="editTitle">Add toner</span> <button type="button" class="x" data-close>Cancel</button></h2>
+  <label class="f">Part number<input id="fPart" type="text" required autocapitalize="characters" placeholder="CT202634"></label>
+  <label class="f">Colour
+    <select id="fColor"><option>Black</option><option>Cyan</option><option>Magenta</option><option>Yellow</option><option>Drum</option><option>Waste toner</option><option>Other</option></select>
+  </label>
+  <label class="f">Compatible models (comma separated)<textarea id="fModels" rows="2" placeholder="DocuCentre-VI C2271, C3371"></textarea></label>
+  <label class="f">Counted in this stocktake<input id="fQty" type="number" inputmode="numeric" min="0" value="0"></label>
+  <label class="f">Yield (pages)<input id="fYield" type="number" inputmode="numeric" min="0"></label>
+  <label class="f">Notes<input id="fNotes" type="text" placeholder="Shelf B2…"></label>
+  <button type="submit" class="btn primary" style="justify-content:center">Save</button>
+  <button type="button" class="btn danger hidden" id="fDelete" style="justify-content:center">Remove from toner list</button>
+</form></dialog>
+
+<!-- Settings -->
+<dialog id="dlgSettings"><div class="sheet">
+  <h2>Settings <button class="x" data-close>Done</button></h2>
+
+  <label class="f">Stocktake name<input id="sName" type="text"></label>
+
+  <div class="f note" style="font-size:14px;color:var(--muted)">Save results to</div>
+  <div class="choice">
+    <label><input type="radio" name="mode" value="excel"><span><b>Excel file (download)</b><small>Counts stay on this phone. Tap “Download Excel” when you finish.</small></span></label>
+    <label><input type="radio" name="mode" value="gsheet"><span><b>Google Sheet (live)</b><small>Every scan is sent to your Google Sheet as you go. Excel download still works too.</small></span></label>
+  </div>
+
+  <div id="gsBox" class="hidden" style="display:flex;flex-direction:column;gap:10px">
+    <label class="f">Google Apps Script web app URL<input id="sUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec" autocapitalize="off" autocorrect="off"></label>
+    <button class="btn" id="testBtn" style="justify-content:center">Send test row</button>
+    <details><summary>How to set up the Google Sheet (5 min)</summary>
+      <ol>
+        <li>Create a new Google Sheet.</li>
+        <li>Menu <b>Extensions → Apps Script</b>. Delete what's there and paste the code from <code>google-apps-script.gs</code> in this project. Save.</li>
+        <li><b>Deploy → New deployment</b> → type <b>Web app</b>. Execute as <b>Me</b>, access <b>Anyone</b>. Deploy and allow access.</li>
+        <li>Copy the <b>Web app URL</b> and paste it above.</li>
+      </ol>
+    </details>
+  </div>
+
+  <button class="btn danger" id="newBtn" style="justify-content:center">Start new stocktake (reset counts to 0)</button>
+  <div id="newConfirm" class="hidden" style="display:flex;flex-direction:column;gap:8px">
+    <div class="note">This sets every count back to 0. Save this stocktake first?</div>
+    <button class="btn primary" id="newSave" style="justify-content:center">Download Excel, then start new</button>
+    <button class="btn danger" id="newNoSave" style="justify-content:center">Start new without saving</button>
+    <button class="btn" id="newCancel" style="justify-content:center">Cancel</button>
+  </div>
+
+  <details><summary>Toner list backup</summary>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+      <button class="btn" id="catExport">⬇︎ Export toner list (.json)</button>
+      <label class="btn" for="catImport">⬆︎ Import toner list (.json)</label>
+      <input id="catImport" type="file" accept="application/json,.json" class="hidden">
     </div>
-  </form>
-</dialog>
+  </details>
+</div></dialog>
 
 <script>
 (() => {
   const $ = id => document.getElementById(id);
-  const COLORS = { Black:'var(--K)', Cyan:'var(--C)', Magenta:'var(--M)', Yellow:'var(--Y)', Drum:'#8a8a8a', 'Waste toner':'#6b5b45', Other:'#bbb' };
-  let items = [];        // [{part,color,models[],yield,notes}]
-  let store = null;      // {save(item), remove(part)}
-  let highlight = null;
-  let canWrite = true;
-
+  const COLORS = { Black:'var(--K)', Cyan:'var(--C)', Magenta:'var(--M)', Yellow:'var(--Y)', Drum:'#8a8a8a', 'Waste toner':'#6b5b45', Other:'#bbb', Unknown:'repeating-linear-gradient(45deg,#ccc 0 4px,#eee 4px 8px)' };
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm = s => String(s || '').toUpperCase().replace(/\*/g,'').replace(/\s+/g,'').trim();
-  const setStatus = (msg, cls='') => { const el=$('status'); el.textContent = msg; el.className = 'status ' + cls; };
+  const today = () => new Date().toLocaleDateString(undefined, { day:'numeric', month:'short', year:'numeric' });
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+  // ---------- State (saved on this phone) ----------
+  const K = { cat:'fuji-toners-v1', st:'fuji-stocktake-v1', set:'fuji-settings-v1', q:'fuji-queue-v1' };
+  const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch { return d; } };
+  const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+  let catalog = {};                                   // part -> {part,color,models,yield,notes}
+  let st = load(K.st, null) || newStocktake();        // {name, started, counts:{}, log:[]}
+  let settings = Object.assign({ mode:'excel', gsUrl:'' }, load(K.set, {}));
+  let queue = load(K.q, []);                          // pending rows for Google Sheet
+  let current = null;                                 // part shown in the "last scanned" card
+
+  function newStocktake() { return { name: 'Stocktake ' + today(), started: Date.now(), counts: {}, log: [] }; }
+  function clean(x) {
+    const part = norm(x && x.part); if (!part) return null;
+    return { part, color: String(x.color || 'Other'), models: Array.isArray(x.models) ? x.models.map(String) : [], yield: Number(x.yield) || 0, notes: String(x.notes || '') };
+  }
+  const saveCat = () => save(K.cat, Object.values(catalog));
+  const saveSt = () => save(K.st, st);
+  const info = p => catalog[p] || { part:p, color:'Unknown', models:[], yield:0, notes:'' };
+  const qty = p => st.counts[p] || 0;
+  const status = (msg, cls='') => { const el = $('status'); el.textContent = msg; el.className = 'status ' + cls; };
+
+  // ---------- Counting ----------
+  function change(part, d, why) {
+    part = norm(part); if (!part) return;
+    const n = qty(part) + d;
+    if (n < 0) { status(`${part} is already at 0.`, 'warn'); return; }
+    if (n === 0) delete st.counts[part]; else st.counts[part] = n;
+    const entry = { id: uid(), t: Date.now(), part, d, why: why || 'scan' };
+    st.log.push(entry); saveSt();
+    enqueue(entry);
+    current = part;
+    renderAll(true);
+  }
+  function undo() {
+    const last = st.log[st.log.length - 1];
+    if (!last) { status('Nothing to undo.'); return; }
+    st.log.pop();
+    const n = qty(last.part) - last.d;
+    if (n <= 0) delete st.counts[last.part]; else st.counts[last.part] = n;
+    saveSt();
+    enqueue({ id: uid(), t: Date.now(), part: last.part, d: -last.d, why: 'undo' });
+    current = last.part;
+    status(`Undone: ${last.d > 0 ? '+' : ''}${last.d} ${last.part}`, 'ok');
+    renderAll();
+  }
+  function onScan(raw) {
+    const p = norm(raw); if (!p) return;
+    change(p, 1, 'scan');
+    beep();
+    status(`+1 ${p}${catalog[p] ? '' : ' (not in your toner list yet)'}`, catalog[p] ? 'ok' : 'warn');
+  }
 
   // ---------- Rendering ----------
-  function render() {
-    const q = $('q').value.trim().toUpperCase();
-    const terms = q.split(/\s+/).filter(Boolean);
-    let list = items.slice().sort((a,b) => a.part.localeCompare(b.part));
-    if (terms.length) {
-      list = list.filter(it => {
-        const hay = [it.part, it.color, ...(it.models||[]), it.notes].join(' ').toUpperCase();
-        const hayNoSpace = hay.replace(/[\s-]/g,'');
-        return terms.every(t => hay.includes(t) || hayNoSpace.includes(t.replace(/-/g,'')));
-      });
+  function renderHeader() {
+    const units = Object.values(st.counts).reduce((a, b) => a + b, 0);
+    const parts = Object.keys(st.counts).length;
+    $('stSub').textContent = `${st.name} · ${units} box${units === 1 ? '' : 'es'} counted`;
+    $('listHint').textContent = `${parts} part${parts === 1 ? '' : 's'} · ${units}`;
+    $('exportLabel').textContent = 'Download Excel';
+    renderSync();
+  }
+  function renderSync() {
+    const h = $('syncHint');
+    if (settings.mode !== 'gsheet') { h.textContent = ''; return; }
+    if (!settings.gsUrl) { h.textContent = '☁︎ Sheet not set up'; return; }
+    h.textContent = queue.length ? `☁︎ ${queue.length} waiting` : '☁︎ Sheet up to date';
+  }
+  function renderLast(flash) {
+    const el = $('last');
+    if (!current) {
+      el.innerHTML = `<div class="label">Last scanned</div><div class="empty">Nothing scanned yet.<br>Tap <b>Scan</b> and point at the 型號 barcode.</div>`;
+      return;
     }
-    if (highlight) list.sort((a,b) => (b.part===highlight) - (a.part===highlight));
-    const el = $('list');
-    if (!items.length) { el.innerHTML = '<div class="empty">No toners saved yet. Scan one or tap ＋.</div>'; return; }
-    if (!list.length) { el.innerHTML = '<div class="empty">No match for “' + esc(q) + '”.</div>'; return; }
-    el.innerHTML = list.map(it => `
-      <div class="card ${it.part===highlight?'hit':''}">
-        <div class="swatch" style="background:${COLORS[it.color]||COLORS.Other}"></div>
-        <div class="grow">
+    const it = info(current), known = !!catalog[current];
+    el.innerHTML = `
+      <div class="label">Last scanned</div>
+      <div class="top">
+        <div class="swatch" style="background:${COLORS[it.color] || COLORS.Other}"></div>
+        <div style="min-width:0">
           <div class="part">${esc(it.part)}</div>
-          <div class="meta">${esc(it.color)}${it.yield ? ' · ' + Number(it.yield).toLocaleString() + ' pages' : ''}</div>
-          ${it.models && it.models.length ? `<div class="models">${it.models.map(esc).join(', ')}</div>` : ''}
-          ${it.notes ? `<div class="meta">${esc(it.notes)}</div>` : ''}
+          <div class="meta">${known ? esc(it.color) + (it.models.length ? ' · ' + esc(it.models.join(', ')) : '') : '<span class="unknown">Not in your toner list — tap Edit to add details</span>'}</div>
         </div>
-        ${canWrite ? `<button data-edit="${esc(it.part)}">Edit</button>` : ''}
-      </div>`).join('');
+        <div class="qty"><b>${qty(current)}</b><span>counted</span></div>
+      </div>
+      <div class="actions">
+        <button data-act="undo">↶ Undo</button>
+        <button data-act="minus">−1</button>
+        <button data-act="plus">+1</button>
+        <button data-act="edit">Edit</button>
+      </div>`;
+    if (flash) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
   }
-  $('list').addEventListener('click', e => {
-    const p = e.target.closest('[data-edit]'); if (p) openForm(items.find(i => i.part === p.dataset.edit));
+  function rowHtml(it) {
+    const q = qty(it.part);
+    return `<div class="row" data-part="${esc(it.part)}">
+      <div class="swatch" style="background:${COLORS[it.color] || COLORS.Other}"></div>
+      <div class="grow"><div class="p">${esc(it.part)}</div><div class="m">${esc(it.color)}${it.models.length ? ' · ' + esc(it.models.join(', ')) : ''}</div></div>
+      <div class="q ${q ? '' : 'zero'}">${q}</div></div>`;
+  }
+  function allParts() {
+    const set = new Set([...Object.keys(catalog), ...Object.keys(st.counts)]);
+    return [...set].sort().map(info);
+  }
+  function renderResults() {
+    const q = $('q').value.trim().toUpperCase();
+    if (!q) { $('results').innerHTML = ''; return; }
+    const terms = q.split(/\s+/);
+    const hits = allParts().filter(it => {
+      const hay = [it.part, it.color, ...it.models, it.notes].join(' ').toUpperCase();
+      const flat = hay.replace(/[\s-]/g, '');
+      return terms.every(t => hay.includes(t) || flat.includes(t.replace(/-/g, '')));
+    }).slice(0, 8);
+    $('results').innerHTML = hits.length ? hits.map(rowHtml).join('') : `<div class="status">No match. <a href="#" id="addFromSearch">Add “${esc(q)}”</a></div>`;
+  }
+  function renderStock() {
+    const showZero = $('showZero').checked;
+    const list = allParts().filter(it => showZero || qty(it.part) > 0)
+      .sort((a, b) => qty(b.part) - qty(a.part) || a.part.localeCompare(b.part));
+    $('tParts').textContent = Object.keys(st.counts).length;
+    $('tUnits').textContent = Object.values(st.counts).reduce((a, b) => a + b, 0);
+    $('stockRows').innerHTML = list.length ? list.map(rowHtml).join('') : '<div class="status">Nothing counted yet.</div>';
+  }
+  function renderAll(flash) { renderHeader(); renderLast(flash); renderResults(); if ($('dlgList').open) renderStock(); }
+
+  // ---------- Events: main screen ----------
+  $('last').addEventListener('click', e => {
+    const a = e.target.closest('[data-act]'); if (!a) return;
+    if (a.dataset.act === 'undo') undo();
+    if (a.dataset.act === 'minus') { change(current, -1, 'manual'); status(`−1 ${current}`, 'ok'); }
+    if (a.dataset.act === 'plus') { change(current, 1, 'manual'); status(`+1 ${current}`, 'ok'); }
+    if (a.dataset.act === 'edit') openEdit(current);
   });
-  $('q').addEventListener('input', () => { highlight = null; render(); });
+  $('q').addEventListener('input', renderResults);
+  $('results').addEventListener('click', e => {
+    if (e.target.id === 'addFromSearch') { e.preventDefault(); openEdit(norm($('q').value), true); return; }
+    const r = e.target.closest('[data-part]'); if (!r) return;
+    current = r.dataset.part; $('q').value = ''; renderAll(); status('');
+  });
+  $('stockRows').addEventListener('click', e => {
+    const r = e.target.closest('[data-part]'); if (!r) return;
+    current = r.dataset.part; $('dlgList').close(); renderAll();
+  });
+  $('listBtn').onclick = () => { renderStock(); $('dlgList').showModal(); };
+  $('showZero').onchange = renderStock;
+  $('addBtn').onclick = () => openEdit('', true);
+  $('settingsBtn').onclick = openSettings;
+  $('exportBtn').onclick = downloadExcel;
+  document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
 
-  // ---------- Lookup after scan ----------
-  function handleCode(raw) {
-    const code = norm(raw);
-    if (!code) return;
-    const hit = items.find(i => i.part === code);
-    $('q').value = '';
-    if (hit) {
-      highlight = hit.part;
-      setStatus(`Found ${hit.part} — ${hit.color}`, 'ok');
-      render();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-      highlight = null; render();
-      setStatus(`Scanned ${code} — not in your list yet.`, 'warn');
-      if (canWrite) openForm({ part: code, color: 'Black', models: [], yield: '', notes: '' }, true);
-    }
+  // ---------- Beep on scan ----------
+  let actx = null;
+  function beep() {
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.frequency.value = 1400; g.gain.value = 0.08; o.connect(g); g.connect(actx.destination);
+      o.start(); o.stop(actx.currentTime + 0.09);
+    } catch {}
+    try { navigator.vibrate && navigator.vibrate(60); } catch {}
   }
 
-  // ---------- Photo decode (works inside the sandbox) ----------
+  // ---------- Barcode decoding ----------
   const hints = new Map();
   hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
   hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
     ZXing.BarcodeFormat.CODE_39, ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.EAN_13,
-    ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.QR_CODE, ZXing.BarcodeFormat.DATA_MATRIX, ZXing.BarcodeFormat.ITF
-  ]);
+    ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.QR_CODE, ZXing.BarcodeFormat.DATA_MATRIX, ZXing.BarcodeFormat.ITF ]);
   const reader = new ZXing.MultiFormatReader(); reader.setHints(hints);
-
-  function tryDecodeCanvas(canvas) {
-    try {
-      const src = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
-      return reader.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(src)), hints);
-    } catch { return null; }
+  function decodeCanvas(c) {
+    try { return reader.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(c))), hints); }
+    catch { return null; }
   }
   function drawScaled(img, maxW, rot) {
     const s = Math.min(1, maxW / Math.max(img.naturalWidth, img.naturalHeight));
     const w = Math.round(img.naturalWidth * s), h = Math.round(img.naturalHeight * s);
-    const c = document.createElement('canvas');
-    const r = rot % 180 !== 0;
+    const c = document.createElement('canvas'), r = rot % 180 !== 0;
     c.width = r ? h : w; c.height = r ? w : h;
     const ctx = c.getContext('2d', { willReadFrequently:true });
     ctx.translate(c.width/2, c.height/2); ctx.rotate(rot*Math.PI/180); ctx.drawImage(img, -w/2, -h/2, w, h);
     return c;
   }
-  $('photo').addEventListener('change', async e => {
-    const f = e.target.files && e.target.files[0]; e.target.value = '';
-    if (!f) return;
-    setStatus('Reading barcode…');
-    const url = URL.createObjectURL(f);
-    const img = new Image();
+  $('photo').addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
+    status('Reading barcode…');
+    const url = URL.createObjectURL(f), img = new Image();
     img.onload = () => {
       let res = null;
-      outer: for (const size of [1600, 1000, 2400]) for (const rot of [0, 90, 180, 270]) {
-        res = tryDecodeCanvas(drawScaled(img, size, rot)); if (res) break outer;
-      }
+      outer: for (const size of [1600, 1000, 2400]) for (const rot of [0, 90, 180, 270]) { res = decodeCanvas(drawScaled(img, size, rot)); if (res) break outer; }
       URL.revokeObjectURL(url);
-      if (res) handleCode(res.getText());
-      else setStatus('Couldn’t read a barcode. Fill the frame with it, hold steady, avoid glare — or type the part number below.', 'err');
+      if (res) onScan(res.getText());
+      else status('Couldn’t read a barcode. Fill the frame, hold steady, avoid glare — or search the part number.', 'err');
     };
-    img.onerror = () => { URL.revokeObjectURL(url); setStatus('Couldn’t open that photo.', 'err'); };
+    img.onerror = () => { URL.revokeObjectURL(url); status('Couldn’t open that photo.', 'err'); };
     img.src = url;
   });
 
-  // ---------- Live camera (only where the page is allowed the camera) ----------
-  let live = null;
-  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.isSecureContext) $('liveBtn').classList.remove('hidden');
-  $('liveBtn').addEventListener('click', async () => {
+  // Live: counts each box once. Holding the same barcode in view does NOT keep adding;
+  // move it out of view for ~1.5 s (or scan a different part) before the next +1.
+  let live = null, lastCode = '', lastSeen = 0;
+  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.isSecureContext)) $('liveBtn').classList.add('hidden');
+  $('liveBtn').onclick = async () => {
+    beep(); // unlocks audio on iOS from a tap
     try {
-      live = new ZXing.BrowserMultiFormatReader(hints, 300);
-      $('video-wrap').style.display = 'block';
-      setStatus('Point at the barcode…');
-      await live.decodeFromConstraints({ video: { facingMode: 'environment' } }, $('video'), (res) => {
-        if (res) { stopLive(); handleCode(res.getText()); }
+      live = new ZXing.BrowserMultiFormatReader(hints, 150);
+      $('video-wrap').style.display = 'block'; $('liveBtn').classList.add('hidden');
+      status('Point at the barcode next to 型號.');
+      await live.decodeFromConstraints({ video: { facingMode: 'environment' } }, $('video'), res => {
+        if (!res) return;
+        const code = norm(res.getText()), now = Date.now();
+        if (code === lastCode && now - lastSeen < 1500) { lastSeen = now; return; }
+        lastCode = code; lastSeen = now;
+        onScan(code);
+        const w = $('video-wrap'); w.classList.add('hit'); setTimeout(() => w.classList.remove('hit'), 400);
       });
     } catch (err) {
       stopLive();
-      $('liveBtn').classList.add('hidden');
-      setStatus('Live camera isn’t allowed here — use 📷 Scan barcode (takes a photo) instead.', 'warn');
+      status('Camera not available here — use “Scan from photo” instead.', 'warn');
     }
-  });
-  function stopLive() { if (live) { try { live.reset(); } catch {} live = null; } $('video-wrap').style.display = 'none'; }
-  $('stopLive').addEventListener('click', () => { stopLive(); setStatus(''); });
-
-  // ---------- Add / edit form ----------
-  let editingPart = null;
-  function openForm(it, isNew) {
-    it = it || { part:'', color:'Black', models:[], yield:'', notes:'' };
-    editingPart = isNew || !it.part ? null : it.part;
-    $('dlgTitle').textContent = editingPart ? 'Edit ' + it.part : 'Add toner';
-    $('fPart').value = it.part; $('fColor').value = it.color || 'Black';
-    $('fModels').value = (it.models || []).join(', '); $('fYield').value = it.yield || '';
-    $('fNotes').value = it.notes || '';
-    $('fDelete').classList.toggle('hidden', !editingPart);
-    $('dlg').showModal();
+  };
+  function stopLive() {
+    if (live) { try { live.reset(); } catch {} live = null; }
+    $('video-wrap').style.display = 'none';
+    if (navigator.mediaDevices && window.isSecureContext) $('liveBtn').classList.remove('hidden');
   }
-  $('addBtn').addEventListener('click', () => openForm(null, true));
-  $('fCancel').addEventListener('click', () => $('dlg').close());
-  let confirmDel = false;
-  $('fDelete').addEventListener('click', async () => {
-    if (!confirmDel) { confirmDel = true; $('fDelete').textContent = 'Tap again to delete'; setTimeout(() => { confirmDel=false; $('fDelete').textContent='Delete'; }, 3000); return; }
-    confirmDel = false; $('fDelete').textContent = 'Delete';
-    try { await store.remove(editingPart); $('dlg').close(); setStatus('Deleted ' + editingPart, 'ok'); }
-    catch (e) { setStatus('Delete failed: ' + (e.message || e.code), 'err'); }
-  });
-  $('form').addEventListener('submit', async e => {
+  $('stopLive').onclick = () => { stopLive(); status(''); };
+
+  // ---------- Add / edit toner ----------
+  let editing = null;
+  function openEdit(part, isNew) {
+    const it = part ? info(part) : { part:'', color:'Black', models:[], yield:0, notes:'' };
+    editing = catalog[part] ? part : null;
+    $('editTitle').textContent = editing ? 'Edit ' + part : 'Add toner';
+    $('fPart').value = it.part; $('fColor').value = it.color === 'Unknown' ? 'Black' : it.color;
+    $('fModels').value = it.models.join(', '); $('fYield').value = it.yield || '';
+    $('fNotes').value = it.notes; $('fQty').value = part ? qty(part) : 0;
+    $('fDelete').classList.toggle('hidden', !editing);
+    $('dlgEdit').showModal();
+  }
+  $('form').addEventListener('submit', e => {
     e.preventDefault();
-    const it = {
-      part: norm($('fPart').value),
-      color: $('fColor').value,
-      models: $('fModels').value.split(',').map(s => s.trim()).filter(Boolean),
-      yield: Number($('fYield').value) || 0,
-      notes: $('fNotes').value.trim(),
-    };
-    if (!/^[A-Z0-9._~:@+-]{2,60}$/.test(it.part)) { setStatus('Part number can only use letters, digits and - . _', 'err'); return; }
-    try {
-      if (editingPart && editingPart !== it.part) await store.remove(editingPart);
-      await store.save(it);
-      $('dlg').close(); highlight = it.part; setStatus('Saved ' + it.part, 'ok');
-    } catch (err) { setStatus('Save failed: ' + (err.message || err.code), 'err'); }
-  });
-
-  // ---------- Storage: Claude artifact DB if available, else this browser ----------
-  function clean(x) {
-    const part = norm(x && x.part);
-    if (!part) return null;
-    return { part, color: String(x.color || 'Other'), models: Array.isArray(x.models) ? x.models.map(String) : [],
-             yield: Number(x.yield) || 0, notes: String(x.notes || '') };
-  }
-  async function useLocal() {
-    const KEY = 'fuji-toners-v1';
-    const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(items)); } catch {} };
-    let saved = null;
-    try { saved = JSON.parse(localStorage.getItem(KEY)); } catch {}
-    if (Array.isArray(saved)) items = saved.map(clean).filter(Boolean);
-    else {
-      // First visit on this device: start from the catalog file shipped with the site.
-      try { items = (await fetch('toners.json', { cache: 'no-cache' }).then(r => r.json())).map(clean).filter(Boolean); persist(); }
-      catch { items = []; }
+    const it = clean({ part:$('fPart').value, color:$('fColor').value,
+      models:$('fModels').value.split(',').map(s => s.trim()).filter(Boolean), yield:$('fYield').value, notes:$('fNotes').value.trim() });
+    if (!it || !/^[A-Z0-9._~:@+-]{2,60}$/.test(it.part)) { $('fPart').setCustomValidity('Letters, digits and - . _ only'); $('fPart').reportValidity(); $('fPart').setCustomValidity(''); return; }
+    if (editing && editing !== it.part) {           // renamed: move its count too
+      delete catalog[editing];
+      if (qty(editing)) { change(it.part, qty(editing), 'rename'); change(editing, -qty(editing), 'rename'); }
     }
-    store = {
-      async save(it) { items = items.filter(i => i.part !== it.part).concat(it); persist(); render(); },
-      async remove(p) { items = items.filter(i => i.part !== p); persist(); render(); },
-    };
-    $('foot').textContent = 'Saved on this device only. Use Export to back up or move your list to another device.';
-    $('backupRow').classList.remove('hidden');
-    $('exportBtn').onclick = () => {
-      const blob = new Blob([JSON.stringify(items.slice().sort((a,b)=>a.part.localeCompare(b.part)), null, 2)], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob); a.download = 'toners.json';
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    };
-    $('importFile').onchange = async e => {
-      const f = e.target.files && e.target.files[0]; e.target.value = '';
-      if (!f) return;
-      try {
-        const arr = JSON.parse(await f.text());
-        if (!Array.isArray(arr)) throw new Error('not a list');
-        const incoming = arr.map(clean).filter(Boolean);
-        const byPart = new Map(items.map(i => [i.part, i]));
-        incoming.forEach(i => byPart.set(i.part, i));
-        items = [...byPart.values()]; persist(); render();
-        setStatus(`Imported ${incoming.length} toner${incoming.length === 1 ? "" : "s"}.`, 'ok');
-      } catch (err) { setStatus('That file isn’t a toner list (' + err.message + ').', 'err'); }
-    };
-    render();
+    catalog[it.part] = it; saveCat();
+    const target = Math.max(0, Number($('fQty').value) || 0), diff = target - qty(it.part);
+    if (diff) change(it.part, diff, 'manual');
+    current = it.part;
+    $('dlgEdit').close(); status('Saved ' + it.part, 'ok'); renderAll();
+  });
+  let delArmed = false;
+  $('fDelete').onclick = () => {
+    if (!delArmed) { delArmed = true; $('fDelete').textContent = 'Tap again to remove'; setTimeout(() => { delArmed = false; $('fDelete').textContent = 'Remove from toner list'; }, 3000); return; }
+    delArmed = false; delete catalog[editing]; saveCat(); $('dlgEdit').close(); status('Removed ' + editing + ' from the toner list (its count stays).', 'ok'); renderAll();
+  };
+
+  // ---------- Excel download ----------
+  function downloadExcel() {
+    if (!window.XLSX) { status('Excel library didn’t load — check your internet connection.', 'err'); return false; }
+    const parts = allParts().sort((a, b) => a.part.localeCompare(b.part));
+    const units = Object.values(st.counts).reduce((a, b) => a + b, 0);
+    const summary = [
+      [st.name], ['Started', new Date(st.started).toLocaleString()], ['Exported', new Date().toLocaleString()], [],
+      ['Part No.', 'Colour', 'Compatible models', 'Qty counted', 'Notes'],
+      ...parts.map(it => [it.part, it.color, it.models.join(', '), qty(it.part), it.notes]),
+      [], ['Total', '', '', units, ''],
+    ];
+    const log = [['Time', 'Part No.', 'Change', 'Reason'], ...st.log.map(l => [new Date(l.t), l.part, l.d, l.why])];
+    const wb = XLSX.utils.book_new();
+    const ws1 = XLSX.utils.aoa_to_sheet(summary); ws1['!cols'] = [{wch:14},{wch:10},{wch:44},{wch:12},{wch:28}];
+    const ws2 = XLSX.utils.aoa_to_sheet(log, { cellDates:true }); ws2['!cols'] = [{wch:20},{wch:14},{wch:8},{wch:10}];
+    XLSX.utils.book_append_sheet(wb, ws1, 'Summary');
+    XLSX.utils.book_append_sheet(wb, ws2, 'Scan log');
+    const fname = (st.name.replace(/[\\/:*?"<>|]+/g, '-') || 'Stocktake') + '.xlsx';
+    XLSX.writeFile(wb, fname);
+    status('Downloaded ' + fname, 'ok');
+    return true;
   }
 
-  async function init() {
-    render();
-    let db = null, user = null;
-    try {
-      if (window.claude && claude.use) {
-        db = await claude.use('db');
-        user = await claude.use('user');
-      }
-    } catch {}
-    if (!db) { useLocal(); return; }
-    try { const w = user && user.can ? await user.can('data.write') : null; if (w === false) canWrite = false; } catch {}
-    if (!canWrite) $('addBtn').classList.add('hidden');
-    const col = db.collection('toners');
-    store = {
-      save: it => col.doc(it.part).set(it),
-      remove: p => col.doc(p).delete(),
-    };
-    $('foot').textContent = 'Synced to your Claude account — same list on iPhone and Mac.';
-    const timer = setTimeout(() => setStatus('Can’t reach saved data yet — check your connection.', 'warn'), 10000);
-    col.onSnapshot(snap => {
-      if (!snap.metadata.fromCache) clearTimeout(timer);
-      items = snap.docs.map(d => { const x = d.data() || {}; return { part: d.id, color: x.color || 'Other', models: Array.isArray(x.models) ? x.models : [], yield: x.yield || 0, notes: x.notes || '' }; });
-      render();
-    }, err => { clearTimeout(timer); setStatus('Data error: ' + err.code, 'err'); });
+  // ---------- Google Sheet sync ----------
+  function enqueue(entry) {
+    if (settings.mode !== 'gsheet') return;
+    const it = info(entry.part);
+    queue.push({ action:'scan', id:entry.id, time:new Date(entry.t).toISOString(), stocktake:st.name,
+                 part:entry.part, change:entry.d, reason:entry.why, color:it.color, models:it.models.join(', ') });
+    save(K.q, queue); renderSync(); flush();
   }
-  init();
+  let sending = false;
+  async function flush() {
+    if (sending || !queue.length || settings.mode !== 'gsheet' || !settings.gsUrl || !navigator.onLine) { renderSync(); return; }
+    sending = true;
+    const batch = queue.slice(0, 50);
+    try {
+      // Apps Script web apps don't send CORS headers, so the response can't be read; a resolved fetch means it arrived.
+      await fetch(settings.gsUrl, { method:'POST', mode:'no-cors', headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body: JSON.stringify({ items: batch }) });
+      const ids = new Set(batch.map(b => b.id)); queue = queue.filter(q => !ids.has(q.id)); save(K.q, queue);
+    } catch { /* offline or blocked: keep queued, retry later */ }
+    sending = false; renderSync();
+    if (queue.length) setTimeout(flush, 1000);
+  }
+  window.addEventListener('online', flush);
+  setInterval(flush, 20000);
+
+  // ---------- Settings ----------
+  function openSettings() {
+    $('sName').value = st.name; $('sUrl').value = settings.gsUrl;
+    document.querySelectorAll('input[name=mode]').forEach(r => r.checked = r.value === settings.mode);
+    $('gsBox').classList.toggle('hidden', settings.mode !== 'gsheet');
+    $('newConfirm').classList.add('hidden'); $('newBtn').classList.remove('hidden');
+    $('dlgSettings').showModal();
+  }
+  $('sName').onchange = () => { st.name = $('sName').value.trim() || st.name; saveSt(); renderHeader(); };
+  document.querySelectorAll('input[name=mode]').forEach(r => r.onchange = () => {
+    settings.mode = r.value; save(K.set, settings);
+    $('gsBox').classList.toggle('hidden', settings.mode !== 'gsheet'); renderSync();
+  });
+  $('sUrl').onchange = () => { settings.gsUrl = $('sUrl').value.trim(); save(K.set, settings); renderSync(); flush(); };
+  $('testBtn').onclick = async () => {
+    settings.gsUrl = $('sUrl').value.trim(); save(K.set, settings);
+    if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(settings.gsUrl)) { status('That doesn’t look like an Apps Script web app URL.', 'err'); $('dlgSettings').close(); return; }
+    queue.push({ action:'test', id:uid(), time:new Date().toISOString(), stocktake:st.name }); save(K.q, queue);
+    await flush(); $('dlgSettings').close();
+    status('Test sent — check the “Scan log” tab in your Google Sheet.', 'ok');
+  };
+  $('newBtn').onclick = () => { $('newBtn').classList.add('hidden'); $('newConfirm').classList.remove('hidden'); };
+  $('newCancel').onclick = () => { $('newConfirm').classList.add('hidden'); $('newBtn').classList.remove('hidden'); };
+  function startNew() {
+    st = newStocktake(); saveSt(); current = null;
+    if (settings.mode === 'gsheet') { queue.push({ action:'start', id:uid(), time:new Date().toISOString(), stocktake:st.name }); save(K.q, queue); flush(); }
+    $('dlgSettings').close(); status('New stocktake started — all counts are 0.', 'ok'); renderAll();
+  }
+  $('newSave').onclick = () => { if (downloadExcel()) startNew(); };
+  $('newNoSave').onclick = startNew;
+
+  $('catExport').onclick = () => {
+    const blob = new Blob([JSON.stringify(Object.values(catalog).sort((a,b)=>a.part.localeCompare(b.part)), null, 2)], { type:'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'toners.json';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  $('catImport').onchange = async e => {
+    const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
+    try {
+      const arr = JSON.parse(await f.text()); if (!Array.isArray(arr)) throw new Error('not a list');
+      const items = arr.map(clean).filter(Boolean); items.forEach(i => catalog[i.part] = i); saveCat();
+      $('dlgSettings').close(); status(`Imported ${items.length} toner${items.length === 1 ? '' : 's'}.`, 'ok'); renderAll();
+    } catch (err) { status('That file isn’t a toner list (' + err.message + ').', 'err'); }
+  };
+
+  // ---------- Start ----------
+  (async () => {
+    const saved = load(K.cat, null);
+    let list = Array.isArray(saved) ? saved : null;
+    if (!list) { try { list = await fetch('toners.json', { cache:'no-cache' }).then(r => r.json()); } catch { list = []; } }
+    list.map(clean).filter(Boolean).forEach(i => catalog[i.part] = i);
+    if (!Array.isArray(saved)) saveCat();
+    const lastLog = st.log[st.log.length - 1]; current = lastLog ? lastLog.part : null;
+    renderAll(); flush();
+  })();
 })();
 </script>
 </body>
