@@ -57,6 +57,4 @@ The camera only works over HTTPS. GitHub Pages provides HTTPS automatically.
 { "part": "CT202634", "color": "Black", "models": ["DocuCentre-VI C2271", "C3371"], "yield": 34000, "notes": "Shelf B2" }
 ```
 
-The four starter entries (CT202634–CT202637) come from retailer listings. Check them against your printer's supplies list.
-
 Barcode reading uses [ZXing](https://github.com/zxing-js/library) and Excel files are made with [SheetJS](https://sheetjs.com). Both load from jsDelivr.
